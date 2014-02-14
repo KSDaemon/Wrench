@@ -77,6 +77,7 @@ class Client extends Configurable
      * @param array  $options (optional) Array of options
      *                         - socket   => Socket instance (otherwise created)
      *                         - protocol => Protocol
+     * @throws \InvalidArgumentException
      */
     public function __construct($uri, $origin, array $options = array())
     {
