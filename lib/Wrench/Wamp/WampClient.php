@@ -40,6 +40,36 @@ class WampClient extends WSClient {
     protected $sessionId = NULL;
 
     /**
+     * @var array
+     */
+    protected $prefixMap = array();
+
+    /**
+     * @var array
+     */
+    protected $subscriptions = array();
+
+    /**
+     * @var array
+     */
+    protected $calls = array();
+
+    /**
+     * @var bool
+     */
+    protected $welcomeReceived = false;
+
+    /**
+     * @var int
+     */
+    protected $protocolVersion = 1;
+
+    /**
+     * @var string
+     */
+    protected $serverIdent = '';
+
+    /**
      * Constructor
      *
      * @param string $uri
@@ -52,7 +82,19 @@ class WampClient extends WSClient {
     public function __construct($uri, $origin, array $options = array())
     {
         parent::__construct($uri, $origin, $options);
-        $this->configure(array('on_data_callback' => $this->onMessage));
+        $this->configure(array('on_data_callback' => array($this, 'onMessage')));
+    }
+
+    /**
+     * Disconnect form WAMP Server
+     */
+    public function disconnect()
+    {
+        parent::disconnect();
+        $this->prefixMap = array();
+        $this->subscriptions = array();
+        $this->calls = array();
+        $this->welcomeReceived = false;
     }
 
     /**
@@ -63,6 +105,35 @@ class WampClient extends WSClient {
     protected function onMessage(Payload $payload)
     {
         echo "Data received!\n";
+
+        $data = json_decode($payload->getPayload());
+
+        switch ($data[0]) {
+            case self::TYPE_ID_WELCOME:
+                $this->welcomeReceived = true;
+                $this->sessionId = $data[1];
+                $this->protocolVersion = $data[2];
+                $this->serverIdent = $data[3];
+                break;
+            case self::TYPE_ID_CALLRESULT:
+                if(isset($this->calls[$data[1]]) && $this->calls[$data[1]]['success']) {
+                    call_user_func($this->calls[$data[1]]['success'], $data[2]);
+                }
+                break;
+            case self::TYPE_ID_CALLERROR:
+                if(isset($this->calls[$data[1]]) && $this->calls[$data[1]]['error']) {
+                    call_user_func($this->calls[$data[1]]['error'], $data[3], $data[4]);
+                }
+                break;
+            case self::TYPE_ID_EVENT:
+                $uri = $this->resolvePrefix($data[1]);
+                if(isset($this->subscriptions[$uri])) {
+                    foreach($this->subscriptions[$uri] as $callback) {
+                        call_user_func($callback, $data[2]);
+                    }
+                }
+                break;
+        }
     }
 
     /**
@@ -84,7 +155,9 @@ class WampClient extends WSClient {
      */
     public function prefix($prefix, $uri)
     {
-
+        $this->prefixMap[$prefix] = $uri;
+        $data = array(self::TYPE_ID_PREFIX, $prefix, $uri);
+        $this->send($data);
     }
 
     /**
@@ -94,18 +167,39 @@ class WampClient extends WSClient {
      */
     public function unprefix($prefix)
     {
-
+        unset($this->prefixMap[$prefix]);
     }
 
     /**
      * Make a RPC call to server
      *
      * @param string $procURI
-     * @param callable $callbacks
+     * @param callable $successCallback
+     * @param callable $errorCallback
+     * @throws \InvalidArgumentException
      */
-    public function call($procURI, $callbacks)
+    public function call($procURI, $successCallback, $errorCallback)
     {
+        $args = func_get_args();
+        array_shift($args);
+        array_shift($args);
+        $callId = $this->generateId();
 
+        while(array_key_exists($callId, $this->calls)) {
+            $callId = $this->generateId();
+        }
+
+        if(!is_callable($successCallback)) {
+            throw new \InvalidArgumentException('No valid success callback specified');
+        }
+
+        if(isset($errorCallback) && !is_callable($errorCallback)) {
+            throw new \InvalidArgumentException('No valid error callback specified');
+        }
+
+        $this->calls[$callId] = array('success' => $successCallback, 'error' => $errorCallback);
+
+        $this->send(array_merge(array(self::TYPE_ID_CALL, $callId, $procURI), $args));
     }
 
     /**
@@ -113,10 +207,24 @@ class WampClient extends WSClient {
      *
      * @param string $topicURI
      * @param callable $callback
+     * @throws \InvalidArgumentException
      */
     public function subscribe($topicURI, $callback)
     {
+        $uri = $this->resolvePrefix($topicURI);
 
+        if(!isset($this->subscriptions[$uri])) {
+            $this->subscriptions[$uri] = array();
+            $this->send(array(self::TYPE_ID_SUBSCRIBE, $topicURI));
+        }
+
+        if(!is_callable($callback)) {
+            throw new \InvalidArgumentException('No valid callback specified');
+        }
+
+        if(!in_array($callback, $this->subscriptions[$uri])) {
+            array_push($this->subscriptions[$uri], $callback);
+        }
     }
 
     /**
@@ -127,7 +235,24 @@ class WampClient extends WSClient {
      */
     public function unsubscribe($topicURI, $callback)
     {
+        $uri = $this->resolvePrefix($topicURI);
 
+        if(isset($this->subscriptions[$uri])) {
+            if($callback) {
+                $key = array_search($callback, $this->subscriptions[$uri]);
+
+                if($key !== false) {
+                    array_splice($this->subscriptions[$uri], $key, 1);
+                }
+
+                if(count($this->subscriptions[$uri])) {
+                    return ;
+                }
+            }
+
+            $this->send(array(self::TYPE_ID_UNSUBSCRIBE, $topicURI));
+            unset($this->subscriptions[$uri]);
+        }
     }
 
     /**
@@ -140,7 +265,8 @@ class WampClient extends WSClient {
      */
     public function publish($topicURI, $event, $exclude = false, $eligible = array())
     {
-
+        $data = array(self::TYPE_ID_PUBLISH, $topicURI, $event, $exclude, $eligible);
+        $this->send($data);
     }
 
     /**
@@ -162,5 +288,18 @@ class WampClient extends WSClient {
         return $key;
     }
 
-
+    /**
+     * Resolve prefix to url
+     *
+     * @param string $prefix
+     * @return string
+     */
+    protected function resolvePrefix($prefix)
+    {
+        if (array_key_exists($prefix, $this->prefixMap)) {
+            return $this->prefixMap[$prefix];
+        } else {
+            return $prefix;
+        }
+    }
 }
