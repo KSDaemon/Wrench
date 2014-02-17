@@ -86,6 +86,36 @@ class WampClient extends WSClient {
     }
 
     /**
+     * Connect to the WAMP server
+     *
+     * @return boolean Whether a new connection was made
+     */
+    public function connect()
+    {
+        if ($this->isConnected()) {
+            return false;
+        }
+
+        $this->socket->connect();
+
+        $key       = $this->protocol->generateKey();
+        $handshake = $this->protocol->getRequestHandshake(
+            $this->uri,
+            $key,
+            $this->origin,
+            $this->headers
+        );
+
+        $this->socket->send($handshake);
+        $response = $this->socket->receive(self::MAX_HANDSHAKE_RESPONSE);
+        $this->connected = $this->protocol->validateResponseHandshake($response, $key);
+        if($this->connected) {
+            $this->payloadHandler->handle($this->getRequestBody($response));
+        }
+        return $this->connected;
+    }
+
+    /**
      * Disconnect form WAMP Server
      */
     public function disconnect()
@@ -98,14 +128,29 @@ class WampClient extends WSClient {
     }
 
     /**
-     * Data receiver handler
+     * Returns only body from $response
+     *
+     * @param string $response
+     * @return string
+     */
+    protected function getRequestBody($response)
+    {
+        $parts = explode("\r\n\r\n", $response, 2);
+
+        if (count($parts) != 2) {
+            return '';
+        } else {
+            return $parts[1];
+        }
+    }
+
+    /**
+     * Process received WAMP message
      *
      * @param Payload $payload
      */
     protected function onMessage(Payload $payload)
     {
-        echo "Data received!\n";
-
         $data = json_decode($payload->getPayload());
 
         switch ($data[0]) {
@@ -122,7 +167,7 @@ class WampClient extends WSClient {
                 break;
             case self::TYPE_ID_CALLERROR:
                 if(isset($this->calls[$data[1]]) && $this->calls[$data[1]]['error']) {
-                    call_user_func($this->calls[$data[1]]['error'], $data[3], $data[4]);
+                    call_user_func($this->calls[$data[1]]['error'], $data[3], count($data) > 4 ? $data[4] : null);
                 }
                 break;
             case self::TYPE_ID_EVENT:
@@ -233,7 +278,7 @@ class WampClient extends WSClient {
      * @param string $topicURI
      * @param callable $callback
      */
-    public function unsubscribe($topicURI, $callback)
+    public function unsubscribe($topicURI, $callback = null)
     {
         $uri = $this->resolvePrefix($topicURI);
 
