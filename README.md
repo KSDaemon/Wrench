@@ -56,6 +56,17 @@ $server->registerApplication('echo', new \Wrench\Examples\EchoApplication());
 $server->registerApplication('chat', new \My\ChatApplication());
 $server->run();
 ```
+
+WAMP client basic usage. For additional info see WAMP specification:
+
+```php
+$wampcli = new \Wrench\WAMP\WampClient('ws://localhost:8000', 'http://localhost');
+
+if($wampcli->connect()) {
+    $wampcli->publish('http://myhost.mydomain/user/message', 'Hi all, guys!', true);
+}
+```
+
 ## Authors
 
 The original maintainer and author was
