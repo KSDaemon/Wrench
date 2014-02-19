@@ -9,7 +9,8 @@
 A simple websocket server and client package for PHP 5.3/5.4, using
 streams. Protocol support is based around [RFC 6455](http://tools.ietf.org/html/rfc6455),
 targeting the latest stable versions of Chrome and Firefox.
-(Suggest other clients [here](https://github.com/varspool/Wrench/wiki))
+(Suggest other clients [here](https://github.com/varspool/Wrench/wiki)).
+Also contains WAMP (WebSocket Application Messaging Protocol) client implementation.
 
 ### Backward compatibility
 
@@ -80,3 +81,4 @@ license.
 
 - [Ratchet](https://github.com/cboden/Ratchet) an excellent Websocket layer for
   React.
+- [WAMP Protocol specification](http://wamp.ws)

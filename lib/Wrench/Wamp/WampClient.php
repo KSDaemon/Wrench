@@ -1,7 +1,7 @@
 <?php
 /**
  * Project: Wrench
- * User: KSDaemon
+ * Author: Konstantin Burkalev
  * Date: 13.02.14
  */
 
