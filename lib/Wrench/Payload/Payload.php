@@ -2,10 +2,12 @@
 
 namespace Wrench\Payload;
 
+use Wrench\Exception\PayloadException;
 use Wrench\Frame\Frame;
 
 use Wrench\Exception\FrameException;
 
+use Wrench\Protocol\Protocol;
 use Wrench\Socket\Socket;
 
 /**
@@ -19,9 +21,16 @@ abstract class Payload
     /**
      * A payload may consist of one or more frames
      *
-     * @var array<Frame>
+     * @var Frame[]
      */
     protected $frames = array();
+
+    /**
+     * String representation of the payload contents
+     *
+     * @var string Binary
+     */
+    protected $buffer;
 
     /**
      * Gets the current frame for the payload
@@ -50,7 +59,7 @@ abstract class Payload
             if ($current->isFinal()) {
                 throw new PayloadException('Payload cannot receieve data: it is already complete');
             } else {
-                $current = array_push($this->frames, $this->getFrame());
+                $this->frames[] = $current = $this->getFrame();
             }
         }
 
@@ -152,10 +161,11 @@ abstract class Payload
      */
     public function receiveData($data)
     {
+        $chunk_size = null;
+
         while ($data) {
             $frame = $this->getReceivingFrame();
 
-            $size = strlen($data);
             $remaining = $frame->getRemainingData();
 
             if ($remaining === null) {

@@ -3,11 +3,8 @@
 namespace Wrench;
 
 use Wrench\Payload\PayloadHandler;
-
 use Wrench\Protocol\Protocol;
-
 use Wrench\Payload\Payload;
-
 use Wrench\Util\Configurable;
 use Wrench\Socket\ServerClientSocket;
 use Wrench\Server;
@@ -30,7 +27,7 @@ class Connection extends Configurable
     /**
      * The connection manager
      *
-     * @var Wrench\ConnectionManager
+     * @var ConnectionManager
      */
     protected $manager;
 
@@ -53,7 +50,7 @@ class Connection extends Configurable
     /**
      * The application this connection belongs to
      *
-     * @var Application
+     * @var Application\Application
      */
     protected $application = null;
 
@@ -102,10 +99,9 @@ class Connection extends Configurable
     /**
      * Constructor
      *
-     * @param Server $server
+     * @param ConnectionManager  $manager
      * @param ServerClientSocket $socket
-     * @param array $options
-     * @throws InvalidArgumentException
+     * @param array              $options
      */
     public function __construct(
         ConnectionManager $manager,
@@ -309,7 +305,7 @@ class Connection extends Configurable
      *
      * Public because called from our PayloadHandler
      *
-     * @param string $payload
+     * @param Payload $payload
      */
     public function handlePayload(Payload $payload)
     {
@@ -361,8 +357,8 @@ class Connection extends Configurable
     /**
      * Sends the payload to the connection
      *
-     * @param string $payload
      * @param string $type
+     * @param string $data
      * @throws HandshakeException
      * @throws ConnectionException
      * @return boolean
@@ -423,8 +419,7 @@ class Connection extends Configurable
      * sending and receiving a close message, e.g. if it has not received a
      * TCP close from the server in a reasonable time period.
      *
-     * @param int|Exception $statusCode
-     * @return boolean
+     * @return boolean|null
      */
     public function close($code = Protocol::CLOSE_NORMAL)
     {
@@ -433,8 +428,8 @@ class Connection extends Configurable
                 $response = $this->protocol->getResponseError($code);
                 $this->socket->send($response);
             } else {
-                $response = $this->protocol->getCloseFrame($code);
-                $this->socket->send($response);
+                $response = $this->protocol->getClosePayload($code);
+                $this->socket->send($response->getPayload());
             }
         } catch (Exception $e) {
             $this->log('Unable to send close message', 'warning');

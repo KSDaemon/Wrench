@@ -3,7 +3,6 @@
 namespace Wrench\Protocol;
 
 use Wrench\Payload\Payload;
-
 use Wrench\Exception\BadRequestException;
 use Wrench\Exception\HandshakeException;
 
@@ -297,8 +296,12 @@ abstract class Protocol
         if (!$uri || !$key || !$origin) {
             throw new InvalidArgumentException('You must supply a URI, key and origin');
         }
-
-        list($scheme, $host, $port, $path) = self::validateUri($uri);
+        
+        list($scheme, $host, $port, $path, $query) = self::validateUri($uri);
+        
+        if ($query) {
+            $path .= '?' . $query;
+        }
 
         $handshake = array(
             sprintf(self::REQUEST_LINE_FORMAT, $path)
@@ -340,6 +343,7 @@ abstract class Protocol
      *
      * @param int|Exception $e Exception or HTTP error
      * @param array $headers
+     * @return string
      */
     public function getResponseError($e, array $headers = array())
     {
@@ -363,6 +367,7 @@ abstract class Protocol
      *
      * @param int $status
      * @param array $headers
+     * @return string
      */
     protected function getHttpResponse($status, array $headers = array())
     {
@@ -386,8 +391,8 @@ abstract class Protocol
     /**
      * @todo better header handling
      * @todo throw exception
-     * @param unknown_type $response
-     * @param unknown_type $key
+     * @param string $response
+     * @param string $key
      * @return boolean
      */
     public function validateResponseHandshake($response, $key)
@@ -489,7 +494,7 @@ abstract class Protocol
         }
 
         if (!$this->acceptsVersion($headers[self::HEADER_VERSION])) {
-            throw new BadRequestException('Unsupported version: ' . $version);
+            throw new BadRequestException('Unsupported version: ' . $headers[self::HEADER_VERSION]);
         } else {
             unset($extraHeaders[self::HEADER_VERSION]);
         }
@@ -529,8 +534,9 @@ abstract class Protocol
      * Gets a suitable WebSocket close frame
      *
      * @param Exception|int $e
+     * @return Payload
      */
-    public function getCloseFrame($e)
+    public function getClosePayload($e)
     {
         $code = false;
 
@@ -547,7 +553,7 @@ abstract class Protocol
         $body = pack('n', $code) . self::$closeReasons[$code];
 
         $payload = $this->getPayload();
-        return $payload->encode($body, self::TYPE_CLOSE);
+        return $payload->encode($body, self::TYPE_CLOSE, true);
     }
 
     /**
@@ -580,8 +586,10 @@ abstract class Protocol
         if (!$path) {
             throw new InvalidArgumentException('Invalid path');
         }
+        
+        $query = parse_url($uri, PHP_URL_QUERY);
 
-        return array($scheme, $host, $port, $path);
+        return array($scheme, $host, $port, $path, $query);
     }
 
     /**
@@ -665,7 +673,8 @@ abstract class Protocol
      * not the original 16 byte random key.
      *
      * @see http://tools.ietf.org/html/rfc6455#section-4.2.2
-     * @param string $key
+     * @param string $encoded_key
+     * @return string
      */
     protected function getAcceptValue($encoded_key)
     {
@@ -761,8 +770,7 @@ abstract class Protocol
      * @param string $host
      * @param string $key
      * @param string $origin
-     * @param int $version
-     * @return multitype:unknown string NULL
+     * @return string[]
      */
     protected function getDefaultRequestHeaders($host, $key, $origin)
     {
@@ -780,6 +788,7 @@ abstract class Protocol
      * Gets the default response headers
      *
      * @param string $key
+     * @return string[]
      */
     protected function getSuccessResponseHeaders($key)
     {
@@ -797,7 +806,7 @@ abstract class Protocol
      *  connections and port 443 for WebSocket connections tunneled over
      *  Transport Layer Security
      *
-     * @param string $uri
+     * @param string|false $scheme
      * @return int
      */
     protected function getPort($scheme)

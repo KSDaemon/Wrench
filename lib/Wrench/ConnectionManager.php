@@ -2,8 +2,7 @@
 
 namespace Wrench;
 
-use Wrench\Protocol\Protocol;
-use Wrench\Resource;
+use InvalidArgumentException;
 use Wrench\Util\Configurable;
 use Wrench\Exception\Exception as WrenchException;
 use Wrench\Exception\CloseException;
@@ -23,7 +22,7 @@ class ConnectionManager extends Configurable implements Countable
     /**
      * Master socket
      *
-     * @var Socket
+     * @var ServerSocket
      */
     protected $socket;
 
@@ -100,7 +99,6 @@ class ConnectionManager extends Configurable implements Countable
     /**
      * Configures the main server socket
      *
-     * @param string $uri
      */
     protected function configureMasterSocket()
     {
@@ -148,8 +146,6 @@ class ConnectionManager extends Configurable implements Countable
 
     /**
      * Select and process an array of resources
-     *
-     * @param array $resources
      */
     public function selectAndProcess()
     {
@@ -242,12 +238,17 @@ class ConnectionManager extends Configurable implements Countable
         }
 
         try {
+            $this->server->notify(Server::EVENT_CLIENT_DATA, array($socket, $connection));
+
             $connection->process();
         } catch (CloseException $e) {
             $this->log('Client connection closed: ' . $e, 'notice');
             $connection->close($e);
         } catch (WrenchException $e) {
             $this->log('Error on client socket: ' . $e, 'warning');
+            $connection->close($e);
+        } catch (\InvalidArgumentException $e) {
+            $this->log('Wrong input arguments: ' . $e, 'warning');
             $connection->close($e);
         }
     }

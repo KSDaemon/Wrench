@@ -3,14 +3,10 @@
 namespace Wrench;
 
 use Wrench\Payload\Payload;
-
 use Wrench\Payload\PayloadHandler;
-
 use Wrench\Util\Configurable;
-
 use Wrench\Socket\ClientSocket;
 use Wrench\Protocol\Protocol;
-use Wrench\Protocol\Rfc6455Protocol;
 
 use \InvalidArgumentException;
 use \RuntimeException;
@@ -18,7 +14,7 @@ use \RuntimeException;
 /**
  * Client class
  *
- * Represents a Wrench client
+ * Represents a websocket client
  */
 class Client extends Configurable
 {
@@ -169,7 +165,7 @@ class Client extends Configurable
      * Sends data to the socket
      *
      * @param string $data
-     * @param string $type Payload type
+     * @param int $type See Protocol::TYPE_*
      * @param boolean $masked
      * @return boolean Success
      */
@@ -193,7 +189,6 @@ class Client extends Configurable
     /**
      * Receives data sent by the server
      *
-     * @param callable $callback
      * @return array<Payload> Payload received since the last call to receive()
      */
     public function receive()
@@ -214,7 +209,7 @@ class Client extends Configurable
     }
 
     /**
-     * Connect to the Wrench server
+     * Connect to the server
      *
      * @return boolean Whether a new connection was made
      */
@@ -241,24 +236,44 @@ class Client extends Configurable
     }
 
     /**
-     * Whether the client is currently connected
+     * Returns whether the client is currently connected
+     *
+     * Also checks the state of the underlying socket
      *
      * @return boolean
      */
     public function isConnected()
     {
-        return $this->connected;
+        if ($this->connected === false) {
+            return false;
+        }
+
+        // Check if the socket is still connected
+        if ($this->socket->isConnected() === false) {
+            $this->disconnect();
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
-     * @todo Bug: what if connect has been called twice. The first socket never
-     *        gets closed.
+     * Disconnects the underlying socket, and marks the client as disconnected
+     *
+     * @param int $reason Reason for disconnecting. See Protocol::CLOSE_*
+     * @throws Exception\FrameException
+     * @throws Exception\SocketException
      */
-    public function disconnect()
+    public function disconnect($reason = Protocol::CLOSE_NORMAL)
     {
+        $payload = $this->protocol->getClosePayload($reason);
+
         if ($this->socket) {
+            $this->socket->send($payload->getPayload());
             $this->socket->disconnect();
         }
+
         $this->connected = false;
     }
 }
